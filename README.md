@@ -47,7 +47,7 @@ KEY=your-secret-key
 ### 3. Build and Run the Docker Container
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 This will build the Docker image and start the container, exposing the service on port `8080`.
@@ -75,7 +75,7 @@ This will build the Docker image and start the container, exposing the service o
 To stop the Docker container:
 
 ```bash
-docker-compose down
+docker compose down
 ```
 
 ## License

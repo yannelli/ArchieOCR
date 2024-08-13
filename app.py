@@ -16,6 +16,7 @@ app = Flask(__name__)
 ENABLE_KEY = os.getenv('ENABLE_KEY', 'False').lower() in ('true', '1', 't')
 SECRET_KEY = os.getenv('KEY')
 
+
 # Function to perform OCR on PDF and return text
 def ocr_pdf(pdf_path):
     images = convert_from_path(pdf_path)
@@ -25,12 +26,14 @@ def ocr_pdf(pdf_path):
         ocr_text += text
     return ocr_text
 
+
 # Middleware to check for valid key
 def check_key():
     if ENABLE_KEY:
         key = request.args.get('key') if request.method == 'GET' else request.form.get('key')
         if not key or key != SECRET_KEY:
             abort(403, description="Invalid or missing API key")
+
 
 # Endpoint to handle both POST and GET requests
 @app.route('/recognize', methods=['POST', 'GET'])
@@ -80,6 +83,7 @@ def recognize():
             "error": "An error occurred while downloading the file",
             "details": str(e)
         }), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8080)
