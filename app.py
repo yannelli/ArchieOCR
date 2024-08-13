@@ -48,20 +48,18 @@ def recognize():
             file = request.files['file']
             if file.filename == '':
                 return jsonify({"error": "No selected file"}), 400
-            if file and file.filename.endswith('.pdf'):
+            if file:
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
                     file.save(temp_pdf.name)
                     ocr_text = ocr_pdf(temp_pdf.name)
                 os.remove(temp_pdf.name)  # Ensure the temporary file is deleted
                 return jsonify({"ocr_text": ocr_text}), 200
-            else:
-                return jsonify({"error": "File must be a PDF"}), 400
 
         elif request.method == 'GET':
             file_url = request.args.get('file')
             if not file_url:
                 return jsonify({"error": "No URL provided"}), 400
-            if file_url.endswith('.pdf'):
+            else:
                 response = requests.get(file_url, timeout=MAX_TIMEOUT)
                 if response.status_code == 200:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
@@ -76,8 +74,6 @@ def recognize():
                         "reason": response.reason,
                         "url": file_url
                     }), 400
-            else:
-                return jsonify({"error": "URL must point to a PDF file"}), 400
 
     except requests.exceptions.RequestException as e:
         return jsonify({
