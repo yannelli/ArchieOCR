@@ -15,6 +15,7 @@ app = Flask(__name__)
 # Retrieve environment variables
 ENABLE_KEY = os.getenv('ENABLE_KEY', 'False').lower() in ('true', '1', 't')
 SECRET_KEY = os.getenv('KEY')
+MAX_TIMEOUT = int(os.getenv('MAX_TIMEOUT', 300))  # Default timeout to 300 seconds
 
 
 # Function to perform OCR on PDF and return text
@@ -52,7 +53,7 @@ def recognize():
                     file.save(temp_pdf.name)
                     ocr_text = ocr_pdf(temp_pdf.name)
                 os.remove(temp_pdf.name)  # Ensure the temporary file is deleted
-                return jsonify({"text": ocr_text}), 200
+                return jsonify({"ocr_text": ocr_text}), 200
             else:
                 return jsonify({"error": "File must be a PDF"}), 400
 
@@ -61,13 +62,13 @@ def recognize():
             if not file_url:
                 return jsonify({"error": "No URL provided"}), 400
             if file_url.endswith('.pdf'):
-                response = requests.get(file_url, timeout=10)
+                response = requests.get(file_url, timeout=MAX_TIMEOUT)
                 if response.status_code == 200:
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_pdf:
                         temp_pdf.write(response.content)
                         ocr_text = ocr_pdf(temp_pdf.name)
                     os.remove(temp_pdf.name)  # Ensure the temporary file is deleted
-                    return jsonify({"text": ocr_text}), 200
+                    return jsonify({"ocr_text": ocr_text}), 200
                 else:
                     return jsonify({
                         "error": "Unable to download the file",
