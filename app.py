@@ -33,23 +33,61 @@ def ocr_pdf(pdf_path):
     ocr_text = ""
     with pdfplumber.open(pdf_path) as pdf:
         for page in pdf.pages:
-            # Extract text
+            elements = []
+
+            # Step 1: Extract text elements
             page_text = page.extract_text()
             if page_text:
-                ocr_text += page_text
+                elements.append({
+                    'type': 'text',
+                    'y0': 0.0,  # Text spans the whole page, so we start at y0 = 0.0
+                    'content': page_text
+                })
 
-            # Extract tables (if any)
+            # Step 2: Extract tables as elements
             tables = page.extract_tables()
             if tables:
                 for table in tables:
-                    table_text = '\n'.join(['\t'.join(row) for row in table])
-                    ocr_text += "\n\n" + table_text + "\n\n"
+                    table_text = '\n'.join(['\t'.join([str(cell) if cell is not None else '' for cell in row]) for row in table])
+                    try:
+                        y0_value = float(table[0][0][1])
+                    except (ValueError, TypeError):
+                        y0_value = 0.0  # Default to 0.0 if conversion fails
+                    elements.append({
+                        'type': 'table',
+                        'y0': y0_value,  # Use validated y0
+                        'content': table_text
+                    })
 
-            # Perform OCR on images in the PDF
+            # Step 3: Extract images and run OCR
             for img in page.images:
-                page_image = page.to_image().crop(img['bbox'])
+                page_image = page.to_image()
+                try:
+                    cropped_image = page_image.original.crop((img['x0'], img['y0'], img['x1'], img['y1']))
+                    processed_image = preprocess_image(cropped_image)
+                    img_text = pytesseract.image_to_string(processed_image)
+                    elements.append({
+                        'type': 'image',
+                        'y0': float(img['y0']),  # Ensure y0 is a float
+                        'content': img_text
+                    })
+                except (KeyError, ValueError, TypeError):
+                    continue  # Skip this image if any errors occur
+
+            # Step 4: Sort all elements by their vertical position
+            elements.sort(key=lambda x: x['y0'])
+
+            # Step 5: Combine all elements in the correct order
+            for element in elements:
+                ocr_text += "\n\n" + element['content'] + "\n\n"
+
+            # Step 6: If no text, tables, or images were found, run OCR on the entire page
+            if not elements:
+                page_image = page.to_image()
                 processed_image = preprocess_image(page_image.original)
-                ocr_text += pytesseract.image_to_string(processed_image)
+                page_ocr_text = pytesseract.image_to_string(processed_image)
+                ocr_text += page_ocr_text + "\n\n"
+
     return ocr_text
 
 
