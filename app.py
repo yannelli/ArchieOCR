@@ -1,3 +1,5 @@
+import shutil
+import subprocess
 from flask import Flask, request, jsonify, abort
 import os
 import tempfile
@@ -36,18 +38,12 @@ def extract_text_with_pymupdf(pdf_path):
     doc = fitz.open(pdf_path)
     extracted_text = ""
 
-    for i in range(len(doc)):
-        page = doc.load_page(i)
-        # Use "blocks" to preserve structure better
-        blocks = page.get_text("blocks")
+    pytesseract.get_tesseract_version()
 
-        # Sort blocks by their vertical position to preserve layout
-        blocks.sort(key=lambda b: b[1])
-
-        for b in blocks:
-            extracted_text += f"{b[4]}\n"
-
-        extracted_text += "\n"
+    for page_num in range(len(doc)):
+        page = doc.load_page(page_num)
+        text = page.get_text()
+        extracted_text += text
 
     return extracted_text
 
@@ -55,28 +51,20 @@ def extract_text_with_pymupdf(pdf_path):
 def ocr_pdf(pdf_path):
     extracted_text = ""
 
-    # First, try to extract text using PyMuPDF
-    doc = fitz.open(pdf_path)
-    for i in range(len(doc)):
-        page = doc.load_page(i)
-        blocks = page.get_text("blocks")
+    page_text = extract_text_with_pymupdf(pdf_path)
 
-        # Sort blocks by their vertical position to maintain layout order
-        blocks.sort(key=lambda b: b[1])
-
-        page_text = ""
-        for b in blocks:
-            page_text += f"{b[4]}\n"
-
-        # If no text is found, or if the text is very sparse, use Tesseract
-        if not page_text.strip():
-            # Convert page to an image for Tesseract OCR
-            pix = page.get_pixmap()
+    if not page_text.strip():
+        doc = fitz.open(pdf_path)
+        for i in range(len(doc)):
+            page = doc.load_page(i)
+            dpi = 300  # Increase DPI for higher resolution
+            pix = page.get_pixmap(matrix=fitz.Matrix(dpi / 72, dpi / 72))  # Scale matrix to increase resolution
             img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
             processed_image = preprocess_image(img_array)
-            page_text = pytesseract.image_to_string(processed_image, config='--psm 6')
+            page_text = pytesseract.image_to_string(processed_image, config='--psm 3')
+            page_text += f"{page_text}\n\n"
 
-        extracted_text += page_text + "\n\n"
+    extracted_text += page_text
 
     return extracted_text
 
