@@ -32,35 +32,53 @@ def preprocess_image(image):
     return denoised
 
 
-# Function to perform OCR on PDF and return text
-# Function to perform OCR on PDF and return text
-def ocr_pdf(pdf_path):
-    ocr_text = []
+def extract_text_with_pymupdf(pdf_path):
+    doc = fitz.open(pdf_path)
+    extracted_text = ""
 
-    # First, try to extract text using PyMuPDF (fitz)
+    for i in range(len(doc)):
+        page = doc.load_page(i)
+        # Use "blocks" to preserve structure better
+        blocks = page.get_text("blocks")
+
+        # Sort blocks by their vertical position to preserve layout
+        blocks.sort(key=lambda b: b[1])
+
+        for b in blocks:
+            extracted_text += f"{b[4]}\n"
+
+        extracted_text += "\n"
+
+    return extracted_text
+
+
+def ocr_pdf(pdf_path):
+    extracted_text = ""
+
+    # First, try to extract text using PyMuPDF
     doc = fitz.open(pdf_path)
     for i in range(len(doc)):
         page = doc.load_page(i)
-        text = page.get_text("text")
-        if text.strip():  # If text is found, add to the list
-            ocr_text.append((i, text))
-        else:
-            # If no text is found, fall back to OCR using pytesseract
-            image = page.get_pixmap()
-            img_array = np.frombuffer(image.samples, dtype=np.uint8).reshape(image.height, image.width, image.n)
+        blocks = page.get_text("blocks")
+
+        # Sort blocks by their vertical position to maintain layout order
+        blocks.sort(key=lambda b: b[1])
+
+        page_text = ""
+        for b in blocks:
+            page_text += f"{b[4]}\n"
+
+        # If no text is found, or if the text is very sparse, use Tesseract
+        if not page_text.strip():
+            # Convert page to an image for Tesseract OCR
+            pix = page.get_pixmap()
+            img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
             processed_image = preprocess_image(img_array)
-            text = pytesseract.image_to_string(processed_image, config='--psm 6')
-            ocr_text.append((i, text))
+            page_text = pytesseract.image_to_string(processed_image, config='--psm 6')
 
-    # Sort by page number to maintain order
-    ocr_text.sort(key=lambda x: x[0])
+        extracted_text += page_text + "\n\n"
 
-    # Combine results
-    final_text = ""
-    for _, content in ocr_text:
-        final_text += f"{content}\n\n"
-
-    return final_text
+    return extracted_text
 
 
 # Middleware to check for valid key
