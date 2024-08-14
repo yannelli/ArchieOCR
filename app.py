@@ -1,5 +1,6 @@
 import shutil
 import subprocess
+from PIL import Image
 from flask import Flask, request, jsonify, abort
 import os
 import tempfile
@@ -21,16 +22,33 @@ app = Flask(__name__)
 ENABLE_KEY = os.getenv('ENABLE_KEY', 'False').lower() in ('true', '1', 't')
 SECRET_KEY = os.getenv('KEY')
 MAX_TIMEOUT = int(os.getenv('MAX_TIMEOUT', 300))  # Default timeout to 300 seconds
+BINARY_THRESHOLD = 180
+
+
+def image_smoothening(img):
+    ret1, th1 = cv2.threshold(img, BINARY_THRESHOLD, 255, cv2.THRESH_BINARY)
+    ret2, th2 = cv2.threshold(th1, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    blur = cv2.GaussianBlur(th2, (1, 1), 0)
+    ret3, th3 = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return th3
+
+
+def remove_noise_and_smooth(img):
+    filtered = cv2.adaptiveThreshold(img.astype(np.uint8), 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 41,
+                                     3)
+    kernel = np.ones((1, 1), np.uint8)
+    opening = cv2.morphologyEx(filtered, cv2.MORPH_OPEN, kernel)
+    closing = cv2.morphologyEx(opening, cv2.MORPH_CLOSE, kernel)
+    img = image_smoothening(img)
+    or_image = cv2.bitwise_or(img, closing)
+    return or_image
 
 
 # Preprocess image to improve OCR accuracy
 def preprocess_image(image):
     # Convert to grayscale
     gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
-    # Apply adaptive thresholding
-    binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-    # Denoise
-    denoised = cv2.fastNlMeansDenoising(binary, None, 10, 7, 21)
+    denoised = remove_noise_and_smooth(gray)
     return denoised
 
 
@@ -54,15 +72,13 @@ def ocr_pdf(pdf_path):
     page_text = extract_text_with_pymupdf(pdf_path)
 
     if not page_text.strip():
-        doc = fitz.open(pdf_path)
-        for i in range(len(doc)):
-            page = doc.load_page(i)
-            dpi = 300  # Increase DPI for higher resolution
-            pix = page.get_pixmap(matrix=fitz.Matrix(dpi / 72, dpi / 72))  # Scale matrix to increase resolution
-            img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)
-            processed_image = preprocess_image(img_array)
-            page_text = pytesseract.image_to_string(processed_image, config='--psm 3')
-            page_text += f"{page_text}\n\n"
+        images = convert_from_path(pdf_path)
+
+        for i, image in enumerate(images):
+            # Preprocess the image
+            processed_image = preprocess_image(image)
+            processed_text = pytesseract.image_to_string(processed_image, config='--psm 12 --oem 1 --dpi 1200')
+            page_text += f"{processed_text}\n\n"
 
     extracted_text += page_text
 
