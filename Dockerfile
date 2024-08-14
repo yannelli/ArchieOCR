@@ -10,7 +10,13 @@ RUN apt-get update && \
         tesseract-ocr \
         python3-pip \
         poppler-utils \
-        wget && \
+        wget \
+        libxml2-dev \
+        libxslt1-dev \
+        libz-dev \
+        libjpeg-dev \
+        zlib1g-dev \
+        libgl1-mesa-glx && \
     apt-get clean
 
 # Set the working directory
@@ -22,7 +28,7 @@ COPY requirements.txt /app/
 # Install Python dependencies
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your app's code into the container
+# Copy the rest of the app's code into the container
 COPY . /app/
 
 # Copy .env file to the container
