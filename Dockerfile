@@ -21,6 +21,10 @@ RUN apt-get update && \
         libmagickwand-dev && \
     apt-get clean
 
+# Allow PDF processing by modifying the ImageMagick policy.xml
+RUN sed -i 's/rights="none"/rights="read|write"/g' /etc/ImageMagick-6/policy.xml && \
+    sed -i 's/<policy domain="coder" rights="none" pattern="PDF"/<policy domain="coder" rights="read|write" pattern="PDF"/g' /etc/ImageMagick-6/policy.xml
+
 # Set the working directory
 WORKDIR /app
 
