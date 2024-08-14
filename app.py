@@ -23,72 +23,81 @@ MAX_TIMEOUT = int(os.getenv('MAX_TIMEOUT', 300))  # Default timeout to 300 secon
 
 # Preprocess image to improve OCR accuracy
 def preprocess_image(image):
-    gray = cv2.cvtColor(np.array(image), cv2.COLOR_BGR2GRAY)
-    _, binary = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    return binary
+    # Convert to grayscale
+    gray = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2GRAY)
+    # Apply adaptive thresholding
+    binary = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+    # Denoise
+    denoised = cv2.fastNlMeansDenoising(binary, None, 10, 7, 21)
+    return denoised
+
+
+def detect_table(image):
+    # Detect horizontal and vertical lines
+    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
+    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 40))
+    horizontal_lines = cv2.morphologyEx(image, cv2.MORPH_OPEN, horizontal_kernel, iterations=2)
+    vertical_lines = cv2.morphologyEx(image, cv2.MORPH_OPEN, vertical_kernel, iterations=2)
+    # Combine lines
+    table_structure = cv2.addWeighted(horizontal_lines, 0.5, vertical_lines, 0.5, 0.0)
+    # Find contours
+    contours, _ = cv2.findContours(table_structure, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    # If we find significant contours, it's likely a table
+    return len(contours) > 5
+
+
+def extract_table(image):
+    # First pass: Detect table structure
+    if not detect_table(image):
+        return None
+    # Second pass: Extract cells and text
+    result = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
+    # Group text by lines
+    lines = {}
+    for i in range(len(result['text'])):
+        if int(result['conf'][i]) > 60:  # Filter low-confidence results
+            key = result['top'][i] // 10  # Group by approximate line
+            if key not in lines:
+                lines[key] = []
+            lines[key].append(result['text'][i])
+    # Combine lines into a structured format
+    table_data = [' '.join(line) for line in lines.values()]
+    return '\n'.join(table_data)
 
 
 # Function to perform OCR on PDF and return text
 def ocr_pdf(pdf_path):
-    ocr_text = ""
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            elements = []
+    ocr_text = []
 
-            # Step 1: Extract text elements
-            page_text = page.extract_text()
-            if page_text:
-                elements.append({
-                    'type': 'text',
-                    'y0': 0.0,  # Text spans the whole page, so we start at y0 = 0.0
-                    'content': page_text
-                })
+    # Convert PDF to images
+    images = convert_from_path(pdf_path)
 
-            # Step 2: Extract tables as elements
-            tables = page.extract_tables()
-            if tables:
-                for table in tables:
-                    table_text = '\n'.join(['\t'.join([str(cell) if cell is not None else '' for cell in row]) for row in table])
-                    try:
-                        y0_value = float(table[0][0][1])
-                    except (ValueError, TypeError):
-                        y0_value = 0.0  # Default to 0.0 if conversion fails
-                    elements.append({
-                        'type': 'table',
-                        'y0': y0_value,  # Use validated y0
-                        'content': table_text
-                    })
+    for i, image in enumerate(images):
+        # Preprocess the image
+        processed_image = preprocess_image(image)
 
-            # Step 3: Extract images and run OCR
-            for img in page.images:
-                page_image = page.to_image()
-                try:
-                    cropped_image = page_image.original.crop((img['x0'], img['y0'], img['x1'], img['y1']))
-                    processed_image = preprocess_image(cropped_image)
-                    img_text = pytesseract.image_to_string(processed_image)
-                    elements.append({
-                        'type': 'image',
-                        'y0': float(img['y0']),  # Ensure y0 is a float
-                        'content': img_text
-                    })
-                except (KeyError, ValueError, TypeError):
-                    continue  # Skip this image if any errors occur
+        # Try to extract as a table
+        table_text = extract_table(processed_image)
 
-            # Step 4: Sort all elements by their vertical position
-            elements.sort(key=lambda x: x['y0'])
+        if table_text:
+            ocr_text.append(("table", i, table_text))
+        else:
+            # If not a table, perform regular OCR
+            text = pytesseract.image_to_string(processed_image)
+            ocr_text.append(("text", i, text))
 
-            # Step 5: Combine all elements in the correct order
-            for element in elements:
-                ocr_text += "\n\n" + element['content'] + "\n\n"
+    # Sort by page number to maintain order
+    ocr_text.sort(key=lambda x: x[1])
 
-            # Step 6: If no text, tables, or images were found, run OCR on the entire page
-            if not elements:
-                page_image = page.to_image()
-                processed_image = preprocess_image(page_image.original)
-                page_ocr_text = pytesseract.image_to_string(processed_image)
-                ocr_text += page_ocr_text + "\n\n"
+    # Combine results
+    final_text = ""
+    for content_type, _, content in ocr_text:
+        if content_type == "table":
+            final_text += f"\n--- Table Content ---\n{content}\n--- End Table ---\n\n"
+        else:
+            final_text += f"{content}\n\n"
 
-    return ocr_text
+    return final_text
 
 
 # Middleware to check for valid key
@@ -143,6 +152,12 @@ def recognize():
             "error": "An error occurred while downloading the file",
             "details": str(e)
         }), 500
+
+
+# Catch-all route for undefined endpoints
+@app.errorhandler(404)
+def not_found(error):
+    return jsonify({"error": "Endpoint not found"}), 404
 
 
 if __name__ == '__main__':
