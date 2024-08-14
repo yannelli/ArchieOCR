@@ -8,7 +8,6 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import cv2
 import numpy as np
-import pdfplumber
 
 # Load environment variables from .env file
 load_dotenv()
@@ -32,39 +31,6 @@ def preprocess_image(image):
     return denoised
 
 
-def detect_table(image):
-    # Detect horizontal and vertical lines
-    horizontal_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (40, 1))
-    vertical_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, 40))
-    horizontal_lines = cv2.morphologyEx(image, cv2.MORPH_OPEN, horizontal_kernel, iterations=2)
-    vertical_lines = cv2.morphologyEx(image, cv2.MORPH_OPEN, vertical_kernel, iterations=2)
-    # Combine lines
-    table_structure = cv2.addWeighted(horizontal_lines, 0.5, vertical_lines, 0.5, 0.0)
-    # Find contours
-    contours, _ = cv2.findContours(table_structure, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    # If we find significant contours, it's likely a table
-    return len(contours) > 5
-
-
-def extract_table(image):
-    # First pass: Detect table structure
-    if not detect_table(image):
-        return None
-    # Second pass: Extract cells and text
-    result = pytesseract.image_to_data(image, output_type=pytesseract.Output.DICT)
-    # Group text by lines
-    lines = {}
-    for i in range(len(result['text'])):
-        if int(result['conf'][i]) > 60:  # Filter low-confidence results
-            key = result['top'][i] // 10  # Group by approximate line
-            if key not in lines:
-                lines[key] = []
-            lines[key].append(result['text'][i])
-    # Combine lines into a structured format
-    table_data = [' '.join(line) for line in lines.values()]
-    return '\n'.join(table_data)
-
-
 # Function to perform OCR on PDF and return text
 def ocr_pdf(pdf_path):
     ocr_text = []
@@ -76,26 +42,18 @@ def ocr_pdf(pdf_path):
         # Preprocess the image
         processed_image = preprocess_image(image)
 
-        # Try to extract as a table
-        table_text = extract_table(processed_image)
-
-        if table_text:
-            ocr_text.append(("table", i, table_text))
-        else:
-            # If not a table, perform regular OCR
-            text = pytesseract.image_to_string(processed_image)
-            ocr_text.append(("text", i, text))
+        # Perform OCR
+        text = pytesseract.image_to_string(processed_image, config='--psm 6')  # Use page segmentation mode 6 for
+        # higher accuracy
+        ocr_text.append((i, text))
 
     # Sort by page number to maintain order
-    ocr_text.sort(key=lambda x: x[1])
+    ocr_text.sort(key=lambda x: x[0])
 
     # Combine results
     final_text = ""
-    for content_type, _, content in ocr_text:
-        if content_type == "table":
-            final_text += f"\n--- Table Content ---\n{content}\n--- End Table ---\n\n"
-        else:
-            final_text += f"{content}\n\n"
+    for _, content in ocr_text:
+        final_text += f"{content}\n\n"
 
     return final_text
 
