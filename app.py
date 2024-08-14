@@ -8,6 +8,7 @@ from werkzeug.utils import secure_filename
 from dotenv import load_dotenv
 import cv2
 import numpy as np
+import fitz
 
 # Load environment variables from .env file
 load_dotenv()
@@ -32,20 +33,24 @@ def preprocess_image(image):
 
 
 # Function to perform OCR on PDF and return text
+# Function to perform OCR on PDF and return text
 def ocr_pdf(pdf_path):
     ocr_text = []
 
-    # Convert PDF to images
-    images = convert_from_path(pdf_path)
-
-    for i, image in enumerate(images):
-        # Preprocess the image
-        processed_image = preprocess_image(image)
-
-        # Perform OCR
-        text = pytesseract.image_to_string(processed_image, config='--psm 6')  # Use page segmentation mode 6 for
-        # higher accuracy
-        ocr_text.append((i, text))
+    # First, try to extract text using PyMuPDF (fitz)
+    doc = fitz.open(pdf_path)
+    for i in range(len(doc)):
+        page = doc.load_page(i)
+        text = page.get_text("text")
+        if text.strip():  # If text is found, add to the list
+            ocr_text.append((i, text))
+        else:
+            # If no text is found, fall back to OCR using pytesseract
+            image = page.get_pixmap()
+            img_array = np.frombuffer(image.samples, dtype=np.uint8).reshape(image.height, image.width, image.n)
+            processed_image = preprocess_image(img_array)
+            text = pytesseract.image_to_string(processed_image, config='--psm 6')
+            ocr_text.append((i, text))
 
     # Sort by page number to maintain order
     ocr_text.sort(key=lambda x: x[0])
