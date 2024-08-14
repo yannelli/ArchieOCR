@@ -16,7 +16,9 @@ RUN apt-get update && \
         libz-dev \
         libjpeg-dev \
         zlib1g-dev \
-        libgl1-mesa-glx && \
+        libgl1-mesa-glx \
+        imagemagick \
+        libmagickwand-dev && \
     apt-get clean
 
 # Set the working directory
