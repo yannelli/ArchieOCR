@@ -12,6 +12,8 @@ import re
 import cv2
 import numpy as np
 import easyocr
+import base64
+from openai import OpenAI
 
 # Load environment variables from .env file
 load_dotenv()
@@ -26,9 +28,13 @@ DPI = int(os.getenv('DPI', 600))
 PAGE_WIDTH = int(os.getenv('PAGE_WIDTH', 1224))
 MAX_DPI = 600
 ENGINE = os.getenv('ENGINE', 'easyocr')
+OPENAI_KEY = os.getenv('OPENAI_KEY')
 
 if ENGINE == 'easyocr':
     reader = easyocr.Reader(['en'])
+
+if ENGINE == 'openai':
+    openai_client = OpenAI(api_key = OPENAI_KEY)
 
 def estimate_dpi(image):
     # Get image size in pixels
@@ -90,6 +96,12 @@ def ocr_image(image):
     return ocr_text
 
 
+def image_to_base64(file_path):
+    with open(file_path, "rb") as image_file:
+        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+    return encoded_string
+
+
 def process_pdf_with_ocr(file_path):
     doc = fitz.open(file_path)
     hdr_info = IdentifyHeaders(file_path)
@@ -101,7 +113,7 @@ def process_pdf_with_ocr(file_path):
         page = doc[page_number]
 
         # Get markdown text for the page (for images)
-        md_text = to_markdown(doc, pages=[page_number], hdr_info=hdr_info, write_images=True)
+        md_text = to_markdown(doc, pages=[page_number], dpi=DPI, hdr_info=hdr_info, write_images=True)
 
         page_text = md_text
 
@@ -133,8 +145,46 @@ def process_pdf_with_ocr(file_path):
                     image = Image.open(io.BytesIO(image_bytes))
                     ocr_text = ocr_image(image)
 
+                if ENGINE == 'openai':
+                    base64_data = image_to_base64(image_path)
+                    image_url = f"data:image/jpeg;base64,{base64_data}"
+                    completion = openai_client.chat.completions.create(
+                        model="gpt-4o",
+                        messages=[
+                            {
+                                "role": "system",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "Extract all the text from the image into a markdown readable format. If any other objects are detected use parenthesis (e.g. Signature). Do not output any system messages."
+                                    }
+                                ]
+                            },
+                            {
+                                "role": "user",
+                                "content": [
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": image_url
+                                        }
+                                    }
+                                ]
+                            }
+                        ],
+                        temperature=0.5,
+                        max_tokens=4095,
+                        top_p=1,
+                        frequency_penalty=0,
+                        presence_penalty=0,
+                        response_format={
+                            "type": "text"
+                        }
+                    )
+                    ocr_text = completion.choices[0].message.content
+
                 # Replace the image reference with OCR text in the markdown
-                md_text = md_text.replace(match.group(0), f"\n\n{ocr_text}\n\n")
+                md_text = md_text.replace(match.group(0), f"\n[OCR]\n{ocr_text}\n[/OCR]\n")
 
         # Combine directly extracted text with OCR text from images
         # combined_text = page_text + "\n\n" + md_text
