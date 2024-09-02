@@ -183,8 +183,8 @@ def process_pdf_with_ocr(file_path):
                             }
                         )
                         ocr_text = completion.choices[0].message.content
+                        ocr_text = ocr_text.replace('```markdown', '').replace('```', '')
                 except Exception as e:
-                    print(e)
                     image = Image.open(io.BytesIO(image_bytes))
                     ocr_text = ocr_image(image)
 
