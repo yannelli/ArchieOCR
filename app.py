@@ -98,12 +98,16 @@ def process_pdf_with_ocr(file_path):
     temp_files = []
 
     for page_number in range(len(doc)):
-        # Get markdown text for the page
+        page = doc[page_number]
+
+        # Get markdown text for the page (for images)
         md_text = to_markdown(doc, pages=[page_number], hdr_info=hdr_info, write_images=True)
+
+        page_text = md_text
 
         # Find all image references in the markdown
         image_pattern = r'!\[.*?\]\((.*?)\)'
-        image_matches = re.finditer(image_pattern, md_text)
+        image_matches = list(re.finditer(image_pattern, md_text))
 
         # Process each image reference
         for match in image_matches:
@@ -115,7 +119,6 @@ def process_pdf_with_ocr(file_path):
             img_num = int(parts[-1].split('.')[0])
 
             # Get the image from the PDF
-            page = doc[page_number]
             image_list = page.get_images(full=True)
             if img_num < len(image_list):
                 img_index = image_list[img_num][0]
@@ -133,7 +136,10 @@ def process_pdf_with_ocr(file_path):
                 # Replace the image reference with OCR text in the markdown
                 md_text = md_text.replace(match.group(0), f"\n\n{ocr_text}\n\n")
 
-            full_text.append(md_text)
+        # Combine directly extracted text with OCR text from images
+        # combined_text = page_text + "\n\n" + md_text
+        full_text.append(md_text)
+
     doc.close()
 
     # Clean up any temporary files that might have been created
