@@ -11,6 +11,7 @@ RUN apt-get update && \
         python3-pip \
         poppler-utils \
         wget \
+        git \
         libxml2-dev \
         libxslt1-dev \
         libz-dev \

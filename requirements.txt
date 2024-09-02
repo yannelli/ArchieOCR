@@ -2,6 +2,7 @@ Flask==2.3.2
 requests==2.31.0
 python-dotenv==1.0.0
 Werkzeug==3.0.1
+easyocr @ git+https://github.com/JaidedAI/EasyOCR.git@master
 PyMuPDF==1.24.9
 pymupdf4llm
 pytesseract==0.3.10

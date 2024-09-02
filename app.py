@@ -11,6 +11,7 @@ import io
 import re
 import cv2
 import numpy as np
+import easyocr
 
 # Load environment variables from .env file
 load_dotenv()
@@ -24,6 +25,10 @@ MAX_TIMEOUT = int(os.getenv('MAX_TIMEOUT', 300))
 DPI = int(os.getenv('DPI', 600))
 PAGE_WIDTH = int(os.getenv('PAGE_WIDTH', 1224))
 MAX_DPI = 600
+ENGINE = os.getenv('ENGINE', 'easyocr')
+
+if ENGINE == 'easyocr':
+    reader = easyocr.Reader(['en'])
 
 def estimate_dpi(image):
     # Get image size in pixels
@@ -103,6 +108,8 @@ def process_pdf_with_ocr(file_path):
         # Process each image reference
         for match in image_matches:
             image_path = match.group(1)
+            temp_files.append(image_path)
+
             # Extract page number and image number from the filename
             parts = image_path.split('-')
             img_num = int(parts[-1].split('.')[0])
@@ -115,15 +122,18 @@ def process_pdf_with_ocr(file_path):
                 base_image = doc.extract_image(img_index)
                 image_bytes = base_image["image"]
 
-                # Perform OCR on the image
-                image = Image.open(io.BytesIO(image_bytes))
-                ocr_text = ocr_image(image)
+                if ENGINE == 'easyocr':
+                    ocr_text = reader.readtext(image_bytes, detail=0)
+                    ocr_text = '\n'.join(str(item) for item in ocr_text)
+
+                if ENGINE == 'tesseract':
+                    image = Image.open(io.BytesIO(image_bytes))
+                    ocr_text = ocr_image(image)
 
                 # Replace the image reference with OCR text in the markdown
-                md_text = md_text.replace(match.group(0), f"\n\n[OCR Text]:\n\n{ocr_text}\n\n")
+                md_text = md_text.replace(match.group(0), f"\n\n{ocr_text}\n\n")
 
-        full_text.append(md_text)
-
+            full_text.append(md_text)
     doc.close()
 
     # Clean up any temporary files that might have been created
@@ -136,7 +146,6 @@ def process_pdf_with_ocr(file_path):
 
 def ocr_pdf(pdf_path):
     return process_pdf_with_ocr(pdf_path)
-
 
 # Middleware to check for valid key
 def check_key():
