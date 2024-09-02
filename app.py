@@ -24,9 +24,9 @@ app = Flask(__name__)
 ENABLE_KEY = os.getenv('ENABLE_KEY', 'False').lower() in ('true', '1', 't')
 SECRET_KEY = os.getenv('KEY')
 MAX_TIMEOUT = int(os.getenv('MAX_TIMEOUT', 300))
-DPI = int(os.getenv('DPI', 600))
+DPI = int(os.getenv('DPI', 72))
 PAGE_WIDTH = int(os.getenv('PAGE_WIDTH', 1224))
-MAX_DPI = 600
+MAX_DPI = 72
 ENGINE = os.getenv('ENGINE', 'easyocr')
 OPENAI_KEY = os.getenv('OPENAI_KEY')
 
@@ -145,43 +145,48 @@ def process_pdf_with_ocr(file_path):
                     image = Image.open(io.BytesIO(image_bytes))
                     ocr_text = ocr_image(image)
 
-                if ENGINE == 'openai':
-                    base64_data = image_to_base64(image_path)
-                    image_url = f"data:image/jpeg;base64,{base64_data}"
-                    completion = openai_client.chat.completions.create(
-                        model="gpt-4o",
-                        messages=[
-                            {
-                                "role": "system",
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": "Extract all the text from the image into a markdown readable format. If any other objects are detected use parenthesis (e.g. Signature). Do not output any system messages."
-                                    }
-                                ]
-                            },
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url": image_url
+                try:
+                    if ENGINE == 'openai':
+                        base64_data = image_to_base64(image_path)
+                        image_url = f"data:image/jpeg;base64,{base64_data}"
+                        completion = openai_client.chat.completions.create(
+                            model="gpt-4o",
+                            messages=[
+                                {
+                                    "role": "system",
+                                    "content": [
+                                        {
+                                            "type": "text",
+                                            "text": "Extract all the text from the image into a markdown readable format. If any other objects are detected use parenthesis (e.g. Signature). Do not output any system messages."
                                         }
-                                    }
-                                ]
+                                    ]
+                                },
+                                {
+                                    "role": "user",
+                                    "content": [
+                                        {
+                                            "type": "image_url",
+                                            "image_url": {
+                                                "url": image_url
+                                            }
+                                        }
+                                    ]
+                                }
+                            ],
+                            temperature=0.5,
+                            max_tokens=4095,
+                            top_p=1,
+                            frequency_penalty=0,
+                            presence_penalty=0,
+                            response_format={
+                                "type": "text"
                             }
-                        ],
-                        temperature=0.5,
-                        max_tokens=4095,
-                        top_p=1,
-                        frequency_penalty=0,
-                        presence_penalty=0,
-                        response_format={
-                            "type": "text"
-                        }
-                    )
-                    ocr_text = completion.choices[0].message.content
+                        )
+                        ocr_text = completion.choices[0].message.content
+                except Exception as e:
+                    print(e)
+                    image = Image.open(io.BytesIO(image_bytes))
+                    ocr_text = ocr_image(image)
 
                 # Replace the image reference with OCR text in the markdown
                 md_text = md_text.replace(match.group(0), f"\n[OCR]\n{ocr_text}\n[/OCR]\n")
