@@ -1,3 +1,4 @@
+import utils
 import os
 import tempfile
 import requests
@@ -48,7 +49,7 @@ def estimate_dpi(image):
         return 72
 
     # Calculate and return the average DPI
-    return int((dpi_x + dpi_y) / 2)
+    return int((float(dpi_x) + float(dpi_y)) / 2)
 
 
 def preprocess_image(image):
@@ -68,6 +69,9 @@ def preprocess_image(image):
 
 
 def ocr_image(image):
+    if image is None:
+        return ""
+
     # Estimate the DPI
     estimated_dpi = estimate_dpi(image)
 
@@ -191,6 +195,9 @@ def process_pdf_with_ocr(file_path):
                 # Replace the image reference with OCR text in the markdown
                 md_text = md_text.replace(match.group(0), f"\n[OCR]\n{ocr_text}\n[/OCR]\n")
 
+        # run ocr on image links
+        md_text = utils.process_external_image_links(md_text)
+
         # Combine directly extracted text with OCR text from images
         # combined_text = page_text + "\n\n" + md_text
         full_text.append(md_text)
@@ -201,6 +208,7 @@ def process_pdf_with_ocr(file_path):
     for temp_file in temp_files:
         if os.path.exists(temp_file):
             os.remove(temp_file)
+
 
     return "\n\n-----\n\n".join(full_text)
 
