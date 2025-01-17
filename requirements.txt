@@ -6,7 +6,7 @@ easyocr @ git+https://github.com/JaidedAI/EasyOCR.git@master
 PyMuPDF==1.24.9
 pymupdf4llm
 pytesseract==0.3.10
-Pillow==10.0.0
+Pillow==10.3.0
 opencv-python==4.8.0.74
 numpy==1.25.2
 filetype==1.2.0
